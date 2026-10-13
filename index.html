@@ -1,0 +1,456 @@
+<!DOCTYPE html>  <html lang="en">  
+<head>  
+  <meta charset="UTF-8">  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">  
+  <title>My Private Cloud</title>    <style>  
+    * { box-sizing: border-box; }  
+  
+    body {  
+      margin: 0;  
+      font-family: Arial, sans-serif;  
+      background: #0c1425;  
+      color: #f5f7ff;  
+      min-height: 100vh;  
+    }  
+  
+    .container {  
+      width: 92%;  
+      max-width: 520px;  
+      margin: 35px auto;  
+    }  
+  
+    .card {  
+      background: #17233a;  
+      padding: 22px;  
+      border-radius: 18px;  
+      margin-bottom: 18px;  
+      box-shadow: 0 8px 25px #0003;  
+    }  
+  
+    h1, h2 { margin-top: 0; }  
+    h1 { color: #71b7ff; font-size: 27px; }  
+    p { color: #c1cce0; line-height: 1.5; }  
+  
+    input, button {  
+      width: 100%;  
+      padding: 13px;  
+      margin-top: 11px;  
+      border-radius: 9px;  
+      font-size: 16px;  
+    }  
+  
+    input {  
+      background: #0c1425;  
+      border: 1px solid #40516e;  
+      color: white;  
+    }  
+  
+    button {  
+      background: #3988f7;  
+      color: white;  
+      border: 0;  
+      font-weight: bold;  
+      cursor: pointer;  
+    }  
+  
+    button.secondary { background: #30415d; }  
+    button.danger { background: #b93b51; }  
+    button:disabled { opacity: .55; }  
+  
+    .hidden { display: none !important; }  
+    .small { font-size: 13px; }  
+    #message { overflow-wrap: anywhere; }  
+  
+    .file {  
+      background: #0c1425;  
+      border: 1px solid #344660;  
+      border-radius: 10px;  
+      padding: 12px;  
+      margin-top: 12px;  
+      overflow-wrap: anywhere;  
+    }  
+  
+    .file button { font-size: 14px; }  
+    .file-name { font-weight: bold; }  
+  </style>  </head>  <body>  
+<div class="container">    <div class="card">  
+    <h1>☁️ My Private Cloud</h1>  
+    <p>Your personal place for PDFs, photos and files.</p>  
+    <p id="message" role="status">Configure Appwrite to get started.</p>  
+  </div>    <section id="authCard" class="card">  
+    <div id="loginPanel">  
+      <h2>🔐 Welcome back</h2>  
+      <input id="loginUsername"  
+             placeholder="Username"  
+             autocomplete="username"  
+             maxlength="30">  <input id="loginPassword"  
+         type="password"  
+         placeholder="Password"  
+         autocomplete="current-password">  
+
+  <button id="loginBtn">Log in</button>  
+  <button class="secondary" id="showRegister">  
+    Create new account  
+  </button>  
+</div>  
+
+<div id="registerPanel" class="hidden">  
+  <h2>📝 Create account</h2>  
+
+  <input id="regUsername"  
+         placeholder="Choose a username"  
+         autocomplete="username"  
+         maxlength="30">  
+
+  <input id="regEmail"  
+         type="email"  
+         placeholder="Email address (for account recovery)"  
+         autocomplete="email">  
+
+  <input id="regPassword"  
+         type="password"  
+         placeholder="Create password"  
+         autocomplete="new-password">  
+
+  <input id="regConfirm"  
+         type="password"  
+         placeholder="Confirm password"  
+         autocomplete="new-password">  
+
+  <button id="registerBtn">Register</button>  
+  <button class="secondary" id="showLogin">  
+    Back to login  
+  </button>  
+  <p class="small">  
+    No phone number or SMS OTP is needed for ordinary login.  
+    Keep your recovery email accessible.  
+  </p>  
+</div>
+
+  </section>    <section id="filesPanel" class="hidden">  
+    <div class="card">  
+      <h2>📁 My files</h2>  
+      <p id="welcome"></p>  <input id="filePicker" type="file" multiple>  
+  <button id="uploadBtn">⬆️ Upload selected files</button>  
+  <button id="refreshBtn" class="secondary">Refresh files</button>  
+  <button id="logoutBtn" class="danger">Log out</button>  
+</div>  
+
+<div class="card">  
+  <h2>Saved files</h2>  
+  <div id="fileList">No files loaded yet.</div>  
+</div>
+
+  </section>    <div class="card">  
+    <p class="small">  
+      🔒 Keep your password private. Only upload personal documents  
+      after testing your account permissions.  
+    </p>  
+  </div>  
+</div>  <script type="module">  
+  import {  
+    Client, Account, Storage, ID, Permission, Role  
+  } from "https://cdn.jsdelivr.net/npm/appwrite@17.0.0/+esm";  
+  
+  // STEP A: Replace these placeholders with your own settings.  
+  const ENDPOINT = "https://YOUR-REGION.cloud.appwrite.io/v1";  
+  const PROJECT_ID = "YOUR_PROJECT_ID";  
+  const BUCKET_ID = "YOUR_PRIVATE_BUCKET_ID";  
+  
+  // STEP B: Replace this with your Appwrite Function's HTTP domain.  
+  // Example format: https://your-function-domain.appwrite.run  
+  const FUNCTION_URL = "https://YOUR-FUNCTION-DOMAIN";  
+  
+  const client = new Client()  
+    .setEndpoint(ENDPOINT)  
+    .setProject(PROJECT_ID);  
+  
+  const account = new Account(client);  
+  const storage = new Storage(client);  
+  
+  const $ = id => document.getElementById(id);  
+  let currentUser = null;  
+  let busy = false;  
+  
+  function say(message) {  
+    $("message").textContent = message;  
+  }  
+  
+  function validConfig() {  
+    return ![  
+      ENDPOINT, PROJECT_ID, BUCKET_ID, FUNCTION_URL  
+    ].some(value => value.includes("YOUR-"));  
+  }  
+  
+  function setBusy(value) {  
+    busy = value;  
+    [  
+      "loginBtn", "registerBtn", "uploadBtn",  
+      "refreshBtn", "logoutBtn"  
+    ].forEach(id => {  
+      $(id).disabled = value;  
+    });  
+  }  
+  
+  async function callAuthFunction(path, payload) {  
+    if (!validConfig()) {  
+      throw new Error(  
+        "Setup is incomplete. Add your Appwrite settings first."  
+      );  
+    }  
+  
+    const response = await fetch(  
+      FUNCTION_URL.replace(/\/$/, "") + "/" + path,  
+      {  
+        method: "POST",  
+        headers: { "Content-Type": "application/json" },  
+        body: JSON.stringify(payload)  
+      }  
+    );  
+  
+    const result = await response.json().catch(() => ({}));  
+  
+    if (!response.ok || !result.ok) {  
+      throw new Error(result.error || "Authentication failed.");  
+    }  
+  
+    return result;  
+  }  
+  
+  function showRegister(show) {  
+    $("loginPanel").classList.toggle("hidden", show);  
+    $("registerPanel").classList.toggle("hidden", !show);  
+  }  
+  
+  $("showRegister").onclick = () => showRegister(true);  
+  $("showLogin").onclick = () => showRegister(false);  
+  
+  $("registerBtn").onclick = async () => {  
+    const username = $("regUsername").value.trim();  
+    const email = $("regEmail").value.trim();  
+    const password = $("regPassword").value;  
+    const confirm = $("regConfirm").value;  
+  
+    if (!/^[a-zA-Z0-9_]{3,30}$/.test(username)) {  
+      return say("Use 3–30 letters, numbers or underscores.");  
+    }  
+  
+    if (!email || !email.includes("@")) {  
+      return say("Enter a valid email address.");  
+    }  
+  
+    if (password.length < 10) {  
+      return say("Use a password with at least 10 characters.");  
+    }  
+  
+    if (password !== confirm) {  
+      return say("The passwords do not match.");  
+    }  
+  
+    setBusy(true);  
+    say("Creating your account...");  
+  
+    try {  
+      await callAuthFunction("register", {  
+        username, email, password  
+      });  
+  
+      $("regPassword").value = "";  
+      $("regConfirm").value = "";  
+      $("loginUsername").value = username;  
+  
+      showRegister(false);  
+      say("Account created. Log in with your username and password.");  
+    } catch (error) {  
+      say(error.message);  
+    } finally {  
+      setBusy(false);  
+    }  
+  };  
+  
+  $("loginBtn").onclick = async () => {  
+    const username = $("loginUsername").value.trim();  
+    const password = $("loginPassword").value;  
+  
+    if (!username || !password) {  
+      return say("Enter your username and password.");  
+    }  
+  
+    setBusy(true);  
+    say("Signing in securely...");  
+  
+    try {  
+      const result = await callAuthFunction("login", {  
+        username, password  
+      });  
+  
+      // The backend must return a short-lived Appwrite custom token.  
+      if (!result.userId || !result.secret) {  
+        throw new Error("The backend returned an invalid login response.");  
+      }  
+  
+      await account.createSession({  
+        userId: result.userId,  
+        secret: result.secret  
+      });  
+  
+      $("loginPassword").value = "";  
+      await openFiles();  
+    } catch (error) {  
+      say(error.message || "Unable to log in.");  
+    } finally {  
+      setBusy(false);  
+    }  
+  };  
+  
+  async function openFiles() {  
+    currentUser = await account.get();  
+  
+    $("authCard").classList.add("hidden");  
+    $("filesPanel").classList.remove("hidden");  
+    $("welcome").textContent = "Signed in as " + currentUser.name;  
+  
+    await loadFiles();  
+    say("You are logged in.");  
+  }  
+  
+  async function loadFiles() {  
+    $("fileList").textContent = "Loading files...";  
+  
+    try {  
+      const result = await storage.listFiles({  
+        bucketId: BUCKET_ID,  
+        total: true  
+      });  
+  
+      const list = $("fileList");  
+      list.replaceChildren();  
+  
+      if (result.files.length === 0) {  
+        list.textContent = "No files yet. Upload your first file!";  
+        return;  
+      }  
+  
+      for (const file of result.files) {  
+        const item = document.createElement("div");  
+        item.className = "file";  
+  
+        const name = document.createElement("div");  
+        name.className = "file-name";  
+        name.textContent = file.name;  
+  
+        const size = document.createElement("p");  
+        size.textContent =  
+          (file.sizeOriginal / 1024).toFixed(1) + " KB";  
+  
+        const download = document.createElement("button");  
+        download.textContent = "Download";  
+        download.onclick = async () => {  
+          try {  
+            const url = storage.getFileDownload({  
+              bucketId: BUCKET_ID,  
+              fileId: file.$id  
+            });  
+            window.location.href = url.toString();  
+          } catch (error) {  
+            say("Download failed: " + error.message);  
+          }  
+        };  
+  
+        const remove = document.createElement("button");  
+        remove.className = "danger";  
+        remove.textContent = "Delete";  
+        remove.onclick = async () => {  
+          if (!confirm("Delete " + file.name + "?")) return;  
+  
+          try {  
+            await storage.deleteFile({  
+              bucketId: BUCKET_ID,  
+              fileId: file.$id  
+            });  
+            say("File deleted.");  
+            await loadFiles();  
+          } catch (error) {  
+            say("Delete failed: " + error.message);  
+          }  
+        };  
+  
+        item.append(name, size, download, remove);  
+        list.append(item);  
+      }  
+    } catch (error) {  
+      $("fileList").textContent = "Could not load files.";  
+      say("Storage error: " + error.message);  
+    }  
+  }  
+  
+  $("uploadBtn").onclick = async () => {  
+    const files = Array.from($("filePicker").files);  
+  
+    if (!files.length) return say("Select at least one file.");  
+  
+    setBusy(true);  
+  
+    try {  
+      for (const file of files) {  
+        // Each uploaded file receives permissions for this user only.  
+        await storage.createFile({  
+          bucketId: BUCKET_ID,  
+          fileId: ID.unique(),  
+          file,  
+          permissions: [  
+            Permission.read(Role.user(currentUser.$id)),  
+            Permission.update(Role.user(currentUser.$id)),  
+            Permission.delete(Role.user(currentUser.$id))  
+          ]  
+        });  
+      }  
+  
+      $("filePicker").value = "";  
+      say("Upload complete!");  
+      await loadFiles();  
+    } catch (error) {  
+      say("Upload failed: " + error.message);  
+    } finally {  
+      setBusy(false);  
+    }  
+  };  
+  
+  $("refreshBtn").onclick = async () => {  
+    setBusy(true);  
+    try {  
+      await loadFiles();  
+      say("File list refreshed.");  
+    } finally {  
+      setBusy(false);  
+    }  
+  };  
+  
+  $("logoutBtn").onclick = async () => {  
+    setBusy(true);  
+  
+    try {  
+      await account.deleteSession({ sessionId: "current" });  
+    } catch (_) {  
+      // Continue to reset the interface.  
+    }  
+  
+    currentUser = null;  
+    $("filesPanel").classList.add("hidden");  
+    $("authCard").classList.remove("hidden");  
+    $("loginPassword").value = "";  
+    say("You have logged out.");  
+    setBusy(false);  
+  };  
+  
+  // Restore an existing login session when possible.  
+  if (validConfig()) {  
+    account.get()  
+      .then(openFiles)  
+      .catch(() => say("Log in or create an account to continue."));  
+  } else {  
+    say("Next: configure your Appwrite project and backend.");  
+  }  
+</script>  </body>  
+</html>  
+Explain this code in simple sweet telugu sweety
